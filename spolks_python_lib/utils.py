@@ -30,7 +30,7 @@ class Utils:
 
     @staticmethod
     def unpack_package(package):
-        if package[0] == Constants.COMMAND_ESCAPE and package[4] == Constants.COMMAND_ESCAPE:
+        if package and package[0] == Constants.COMMAND_ESCAPE and package[4] == Constants.COMMAND_ESCAPE:
             command = package[1:4]
             payload = package[5:]
         else:
@@ -41,3 +41,10 @@ class Utils:
             'command': command,
             'payload': payload
         }
+
+    @staticmethod
+    def first(array, compare_field, comparator):
+        for index, value in enumerate(array):
+            if comparator(compare_field, value):
+                return value, index
+        return ()

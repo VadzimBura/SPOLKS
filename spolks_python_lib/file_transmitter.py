@@ -9,16 +9,79 @@ from constants import Constants
 from utils import Utils
 
 
-def establish_connection(s, host, port):
-    if s.recvfrom(Constants.FILE_CHUNK_SIZE)[0] != Constants.SERVER_ECHO:
-        return False
-    s.sendto(Constants.OK_STATUS, (host, port))
-    return True
 
 
 class FileTransmitter:
     @staticmethod
-    def send_file_tcp(s, filename):
+    def send_file_tcp(s, filename, lock):
+        sending_file = open(filename, 'rb')
+        filesize = os.stat(filename).st_size
+        client_address = s.getpeername()
+        try:
+            package = s.recv(Constants.FILE_CHUNK_SIZE)
+            bytes_sent = int(package)
+            sending_file.seek(bytes_sent)
+            while True:
+                data = sending_file.read(Constants.FILE_CHUNK_SIZE)
+                if not data:
+                    sending_file.close()
+                    lock.acquire()
+                    print "File sent to {0}".format(client_address)
+                    sys.stdout.write('\033M')
+                    lock.release()
+                    break
+                else:
+                    s.send(data)
+
+                bytes_sent += len(data)
+                percent = int(float(bytes_sent) * 100 / float(filesize))
+
+                # lock.acquire()
+                # print "{0} / {1} Kb sent to client {2}({3}%)".format(Utils.to_kilobytes(bytes_sent),
+                #                                                      Utils.to_kilobytes(filesize), client_address,
+                #                                                      percent)
+                # sys.stdout.write('\033M')
+                # lock.release()
+        except socket.error, value:
+            print value
+        except Exception, value:
+            print value
+        finally:
+            s.close()
+
+
+    @staticmethod
+    def receive_file_tcp(s, filename):
+        receiving_file = open(filename, 'ab')
+
+        bytes_received = os.path.getsize(filename)
+        s.settimeout(Constants.DEFAULT_TIMEOUT)
+        server_address = s.getpeername()
+        print "Already received {0} bytes".format(bytes_received)
+        try:
+            s.send(str(bytes_received))
+        except Exception:
+            print Exception.message
+            return
+
+        while True:
+            response = s.recv(Constants.FILE_CHUNK_SIZE)
+            if not response:
+                print '\nFile received'
+                receiving_file.close()
+                break
+            else:
+                receiving_file.write(response)
+
+            bytes_received += len(response)
+
+            # print "Received {0} Kb from {1}".format(Utils.to_kilobytes(bytes_received), server_address)
+            # sys.stdout.write('\033M')
+        s.close()
+
+
+    @staticmethod
+    def send_file_with_oob_tcp(s, filename):
         sending_file = open(filename, 'rb')
         filesize = os.stat(filename).st_size
         oob_sent = 0
@@ -54,7 +117,7 @@ class FileTransmitter:
         sending_file.close()
 
     @staticmethod
-    def receive_file_tcp(s, filename):
+    def receive_file_with_oob_tcp(s, filename):
         receiving_file = open(filename, 'ab')
 
         bytes_received = os.path.getsize(filename)
@@ -81,7 +144,6 @@ class FileTransmitter:
             if not chunk:
                 break
         receiving_file.close()
-
 
     @staticmethod
     def send_file_udp(s, filename):
@@ -149,7 +211,6 @@ class FileTransmitter:
                 for rd in readable:
                     bytes_sent = 0
                     package, client_address = s.recvfrom(Constants.FILE_CHUNK_SIZE)
-                    # key = ''.join(map(str, client_address))
                     unpacked_package = Utils.unpack_package(package)
 
                     if not connections.has_key(client_address) or connections[client_address] is None:
@@ -180,7 +241,6 @@ class FileTransmitter:
             print value
         finally:
             s.close()
-
 
     @staticmethod
     def receive_file_multicast(s, filename, host, port):
